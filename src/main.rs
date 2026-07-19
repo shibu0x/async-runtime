@@ -1,7 +1,8 @@
-use crate::future::{Task, run};
+use crate::{executor::{Task, run}, reactor::reactor};
 use rand::Rng;
 
-pub mod future;
+pub mod executor;
+pub mod reactor;
 
 pub struct TaskList {
     pub tasks: Vec<Task>,
@@ -24,4 +25,5 @@ pub fn main() {
     }
 
     let _ = run(task_list);
+    let _ = reactor();
 }

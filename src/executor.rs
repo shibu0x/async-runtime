@@ -31,13 +31,18 @@ impl MyFuture for Task {
     }
 }
 
+//an event loop that drive all tasks concurrently until completion
 pub fn run(mut task_list:TaskList) -> Result<(),()>{
+
+    // keep cycling as long as there are active futures to poll
     while !task_list.tasks.is_empty() {
+
+        // advance state and clean up finished tasks in a single pass
         task_list.tasks.retain_mut(|task| {
-            let response = task.poll();
+            let response = task.poll();  
             match response{
-                Poll::Pending => true,
-                Poll::Ready => false
+                Poll::Pending => true, //keep active task for the next iteration
+                Poll::Ready => false   //remove completed task to avoid re-polling
             }
         });
     }
