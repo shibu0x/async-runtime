@@ -1,37 +1,52 @@
-pub fn reactor() -> std::io::Result<()> {
-    unsafe {
-        let kq = get_kq().expect("kqueue failed");
+use std::collections::HashMap;
 
+pub struct Reactor {
+    pub kq: i32,
+    pub map: HashMap<usize, usize>,
+}
+
+impl Reactor {
+    pub fn new() -> Self {
+        let kq = get_kq().expect("kq registration failed");
+        return Self {
+            kq,
+            map: HashMap::new(),
+        };
+    }
+
+    pub fn register(&mut self, ident: usize, millis: u128) -> std::io::Result<()> {
         let event = libc::kevent {
-            ident: 1,
+            ident: ident,
             filter: libc::EVFILT_TIMER,
             flags: libc::EV_ADD | libc::EV_ENABLE,
             fflags: 0,
-            data: 2000,
+            data: millis as isize,
             udata: std::ptr::null_mut(),
         };
         let changes = [event];
 
-        let register = libc::kevent(
-            kq,
-            changes.as_ptr(),
-            changes.len() as i32,
-            std::ptr::null_mut(),
-            0,
-            std::ptr::null_mut(),
-        );
-
-        if register == -1 {
-            return Err(std::io::Error::last_os_error());
+        unsafe {
+            let register = libc::kevent(
+                self.kq,
+                changes.as_ptr(),
+                changes.len() as i32,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+            );
+            if register == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
         }
+        Ok(())
+    }
 
-        println!("Listening for kq {}...", kq);
+    pub fn wait(&mut self) -> std::io::Result<Vec<usize>> {
+        unsafe {
+            let mut event_list: [libc::kevent; 32] = [std::mem::zeroed(); 32];
 
-        let mut event_list: [libc::kevent; 1] = [std::mem::zeroed()];
-
-        loop {
             let nevents = libc::kevent(
-                kq,
+                self.kq,
                 std::ptr::null(),
                 0,
                 event_list.as_mut_ptr(),
@@ -43,15 +58,19 @@ pub fn reactor() -> std::io::Result<()> {
                 return Err(std::io::Error::last_os_error());
             }
 
-            if nevents > 0 {
-                println!("event amount fired : {}", nevents);
-                let ident = event_list[0].ident;
-                println!("event which is fired : {:?}", ident);
-                break;
-            }
-        }
+            let mut idents = Vec::new();
 
-        Ok(())
+            for event in event_list.iter().take(nevents as usize) {
+                idents.push(event.ident as usize);
+            }
+            Ok(idents)
+        }
+    }
+
+    pub fn drop(&mut self) {
+        unsafe {
+            libc::close(self.kq);
+        }
     }
 }
 
