@@ -66,14 +66,15 @@ impl Reactor {
             Ok(idents)
         }
     }
+}
 
-    pub fn drop(&mut self) {
+impl Drop for Reactor {
+    fn drop(&mut self) {
         unsafe {
             libc::close(self.kq);
         }
     }
 }
-
 //this function is used to register a queue in kernel so that we can register an event polling in it
 //kqueue is a function using which we can directly interact with the kernel and can create an empty list
 //   which can be used anytime by kevent to register and and blocking the events and polling

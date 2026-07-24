@@ -1,8 +1,7 @@
 use std::time::{Duration, Instant};
 
 use crate::{
-    executor::{MyFuture, Poll},
-    reactor::Reactor,
+    executor::{MyFuture, Poll, ReadyQueue}, reactor::Reactor,
 };
 
 pub struct Timer {
@@ -22,7 +21,7 @@ impl Timer {
 }
 
 impl MyFuture for Timer {
-    fn poll(&mut self, reactor: &mut Reactor) -> Poll {
+    fn poll(&mut self, reactor: &mut Reactor,_ready : &ReadyQueue) -> Poll {
         if Instant::now() >= self.deadline {
             println!("timer {} fired.", self.id);
             return Poll::Ready;
