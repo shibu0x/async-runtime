@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{TaskList, reactor::Reactor};
 
 //a poll enum and here we are storing if the task will be ready or not
@@ -5,6 +7,8 @@ pub enum Poll {
     Ready,
     Pending,
 }
+
+pub type ReadyQueue = Rc<RefCell<Vec<usize>>>;
 
 //the struct future to store the value of per task
 pub struct Task {
@@ -16,17 +20,18 @@ pub struct Task {
 
 //a trait to keep calling poll
 pub trait MyFuture {
-    fn poll(&mut self, reactor: &mut Reactor) -> Poll;
+    fn poll(&mut self, reactor: &mut Reactor, ready: &ReadyQueue) -> Poll;
 }
 
 impl MyFuture for Task {
-    fn poll(&mut self, _reactor: &mut Reactor) -> Poll {
+    fn poll(&mut self, _reactor: &mut Reactor, ready: &ReadyQueue) -> Poll {
         if self.rounds < self.target {
             println!(
                 "{} is not completed, {} rounds done",
                 self.task_name, self.rounds
             );
             self.rounds += 1;
+            ready.borrow_mut().push(self.id as usize);
             Poll::Pending
         } else {
             println!(
@@ -38,22 +43,24 @@ impl MyFuture for Task {
     }
 }
 
-//an event loop that drive all tasks concurrently until completion
 pub fn run(mut task_list: TaskList, reactor: &mut Reactor) -> Result<(), ()> {
-    // keep cycling as long as there are active futures to poll
-    while !task_list.tasks.is_empty() {
-        // advance state and clean up finished tasks in a single pass
-        task_list.tasks.retain_mut(|task| {
-            let response = task.poll(reactor);
-            match response {
-                Poll::Pending => true, //keep active task for the next iteration
-                Poll::Ready => false,  //remove completed task to avoid re-polling
-            }
-        });
+    while !task_list.pending_tasks.is_empty() {
+        let batch: Vec<usize> = task_list.ready_tasks.borrow_mut().drain(..).collect();
 
-        if !task_list.tasks.is_empty() {
-            let _ = reactor.wait();
+        for id in batch {
+            if let Some(task) = task_list.pending_tasks.get_mut(&id) {
+                if let Poll::Ready = task.poll(reactor, &task_list.ready_tasks) {
+                    task_list.pending_tasks.remove(&id);
+                }
+            }
+        }
+
+        if task_list.ready_tasks.borrow().is_empty() && !task_list.pending_tasks.is_empty() {
+            if let Ok(fired) = reactor.wait() {
+                task_list.ready_tasks.borrow_mut().extend(fired);
+            }
         }
     }
+
     Ok(())
 }
