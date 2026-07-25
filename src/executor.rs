@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{TaskList, reactor::Reactor};
+use crate::{TaskList, reactor::Reactor, stream::TcpStreamFuture};
 
 //a poll enum and here we are storing if the task will be ready or not
 pub enum Poll {
@@ -53,6 +53,14 @@ pub fn run(mut task_list: TaskList, reactor: &mut Reactor) -> Result<(), ()> {
                     task_list.pending_tasks.remove(&id);
                 }
             }
+        }
+
+        let new_streams: Vec<_> = task_list.connections.borrow_mut().drain(..).collect();
+        for stream in new_streams {
+            let sf = TcpStreamFuture::new(stream);
+            let id = sf.id;
+            task_list.pending_tasks.insert(id, Box::new(sf));
+            task_list.ready_tasks.borrow_mut().push(id);
         }
 
         if task_list.ready_tasks.borrow().is_empty() && !task_list.pending_tasks.is_empty() {
