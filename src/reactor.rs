@@ -1,24 +1,21 @@
-use std::collections::HashMap;
-
 pub struct Reactor {
     pub kq: i32,
-    pub map: HashMap<usize, usize>,
 }
 
 impl Reactor {
     pub fn new() -> Self {
         let kq = get_kq().expect("kq registration failed");
-        return Self {
-            kq,
-            map: HashMap::new(),
-        };
+        return Self { kq };
     }
 
     pub fn register(&mut self, ident: usize, millis: u128) -> std::io::Result<()> {
         let event = libc::kevent {
             ident: ident,
             filter: libc::EVFILT_TIMER,
-            flags: libc::EV_ADD | libc::EV_ENABLE,
+            // EV_ONESHOT: fire exactly once, then the kernel removes the
+            // registration itself. Without it EVFILT_TIMER is periodic and
+            // keeps firing after the timer task is already gone.
+            flags: libc::EV_ADD | libc::EV_ENABLE | libc::EV_ONESHOT,
             fflags: 0,
             data: millis as isize,
             udata: std::ptr::null_mut(),

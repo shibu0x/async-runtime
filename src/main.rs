@@ -12,10 +12,12 @@ pub mod executor;
 pub mod listener;
 pub mod reactor;
 pub mod timer;
+pub mod stream;
 
 pub struct TaskList {
     pub pending_tasks: HashMap<usize, Box<dyn MyFuture>>,
     pub ready_tasks: Rc<RefCell<Vec<usize>>>,
+    pub connections: Connections
 }
 
 pub type Connections = Rc<RefCell<Vec<TcpStream>>>;
@@ -29,6 +31,7 @@ pub fn main() {
     let mut task_list = TaskList {
         pending_tasks: HashMap::new(),
         ready_tasks: Rc::new(RefCell::new(vec![])),
+        connections : connections.clone()
     };
 
     let listener = TcpListenerFuture::new("127.0.0.1:8080", connections);

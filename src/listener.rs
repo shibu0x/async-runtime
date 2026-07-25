@@ -42,16 +42,18 @@ impl MyFuture for TcpListenerFuture {
                 return Poll::Pending;
             }
             Err(e) => {
-                if e.kind() == ErrorKind::WouldBlock {
-                    if !self.registered {
-                        let _ = reactor.register_read(self.id as usize);
-                        self.registered = true;
-                    }
-                    return Poll::Pending;
-                } else {
+                // WouldBlock is the normal "no pending connection" case.
+                // Other errors (e.g. ECONNABORTED) are transient: log and
+                // recover the same way instead of stranding the listener with
+                // no registration and no re-queue.
+                if e.kind() != ErrorKind::WouldBlock {
                     println!("accept error : {}", e);
-                    return Poll::Pending;
                 }
+                if !self.registered {
+                    let _ = reactor.register_read(self.id as usize);
+                    self.registered = true;
+                }
+                return Poll::Pending;
             }
         }
     }
