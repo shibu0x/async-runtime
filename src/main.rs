@@ -6,6 +6,7 @@ use crate::executor::{Executor, yield_now};
 use crate::net::accept_loop;
 use crate::timer::TimerFuture;
 
+pub mod compare;
 pub mod executor;
 pub mod net;
 pub mod reactor;
@@ -31,6 +32,12 @@ async fn sleeper(id: usize, secs: u64) {
 }
 
 fn main() {
+    // `cargo run -- compare` prints a busy-poll vs blocking CPU comparison and exits.
+    if std::env::args().nth(1).as_deref() == Some("compare") {
+        compare::run();
+        return;
+    }
+
     let mut rng = rand::thread_rng();
     let n = rng.gen_range(1..11);
 
