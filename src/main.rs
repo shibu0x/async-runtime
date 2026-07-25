@@ -1,73 +1,48 @@
-use std::{cell::RefCell, collections::HashMap, net::TcpStream, rc::Rc, time::Duration, vec};
+use std::time::Duration;
 
-use crate::{
-    executor::{MyFuture, Task, run},
-    listener::TcpListenerFuture,
-    reactor::Reactor,
-    timer::Timer,
-};
 use rand::Rng;
 
+use crate::executor::{Executor, yield_now};
+use crate::net::accept_loop;
+use crate::timer::TimerFuture;
+
 pub mod executor;
-pub mod listener;
+pub mod net;
 pub mod reactor;
 pub mod timer;
-pub mod stream;
+pub mod waker;
 
-pub struct TaskList {
-    pub pending_tasks: HashMap<usize, Box<dyn MyFuture>>,
-    pub ready_tasks: Rc<RefCell<Vec<usize>>>,
-    pub connections: Connections
+// A CPU-bound task that cooperatively yields between rounds instead of hogging
+// the executor thread.
+async fn compute(name: String, target: u64) {
+    let mut rounds = 0;
+    while rounds < target {
+        println!("{} is not completed, {} rounds done", name, rounds);
+        rounds += 1;
+        yield_now().await;
+    }
+    println!("{} is completed after {} rounds", name, rounds);
 }
 
-pub type Connections = Rc<RefCell<Vec<TcpStream>>>;
+// Sleeps `secs` seconds by awaiting a real kqueue timer, then prints.
+async fn sleeper(id: usize, secs: u64) {
+    TimerFuture::new(Duration::from_secs(secs)).await;
+    println!("timer {} fired.", id);
+}
 
-pub fn main() {
+fn main() {
     let mut rng = rand::thread_rng();
-    let tasks = rng.gen_range(1..11);
-    let connections: Connections = Rc::new(RefCell::new(vec![]));
+    let n = rng.gen_range(1..11);
 
-    let mut reactor = Reactor::new();
-    let mut task_list = TaskList {
-        pending_tasks: HashMap::new(),
-        ready_tasks: Rc::new(RefCell::new(vec![])),
-        connections : connections.clone()
-    };
+    let mut executor = Executor::new();
 
-    let listener = TcpListenerFuture::new("127.0.0.1:8080", connections);
-    let listener_id = listener.id;
-    task_list
-        .pending_tasks
-        .insert(listener_id, Box::new(listener));
-    task_list.ready_tasks.borrow_mut().push(listener_id);
+    // The TCP echo server runs forever, so the runtime never exits on its own.
+    executor.spawn(accept_loop("127.0.0.1:8080".to_string()));
 
-    for i in 1..=tasks {
-        let task_id = i+100;
-        let time_id = (i + 1000) as usize;
-
-        let new_task = {
-            Task {
-                id: task_id,
-                task_name: format!("Task {}", task_id),
-                rounds: 0,
-                target: rng.gen_range(1..11),
-            }
-        };
-        task_list
-            .pending_tasks
-            .insert(task_id as usize, Box::new(new_task));
-        task_list.ready_tasks.borrow_mut().push(task_id as usize);
-
-        let new_timer = {
-            Timer {
-                id: time_id,
-                deadline: std::time::Instant::now() + Duration::from_secs(rng.gen_range(1..11)),
-                registered: false,
-            }
-        };
-        task_list.pending_tasks.insert(time_id, Box::new(new_timer));
-        task_list.ready_tasks.borrow_mut().push(time_id);
+    for i in 1..=n {
+        executor.spawn(compute(format!("Task {}", i + 100), rng.gen_range(1..11)));
+        executor.spawn(sleeper((i + 1000) as usize, rng.gen_range(1..11)));
     }
 
-    let _ = run(task_list, &mut reactor);
+    executor.run();
 }
