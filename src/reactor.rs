@@ -41,6 +41,33 @@ impl Reactor {
         Ok(())
     }
 
+    pub fn register_read(&mut self, ident: usize) -> std::io::Result<()> {
+        let event = libc::kevent {
+            ident: ident,
+            filter: libc::EVFILT_READ,
+            flags: libc::EV_ADD | libc::EV_ENABLE | libc::EV_CLEAR,
+            fflags: 0,
+            data: 0,
+            udata: std::ptr::null_mut(),
+        };
+        let changes = [event];
+
+        unsafe {
+            let register = libc::kevent(
+                self.kq,
+                changes.as_ptr(),
+                changes.len() as i32,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+            );
+            if register == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+        Ok(())
+    }
+
     pub fn wait(&mut self) -> std::io::Result<Vec<usize>> {
         unsafe {
             let mut event_list: [libc::kevent; 32] = [std::mem::zeroed(); 32];
@@ -75,6 +102,7 @@ impl Drop for Reactor {
         }
     }
 }
+
 //this function is used to register a queue in kernel so that we can register an event polling in it
 //kqueue is a function using which we can directly interact with the kernel and can create an empty list
 //   which can be used anytime by kevent to register and and blocking the events and polling
